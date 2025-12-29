@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Робот-Биолог: Веб-симулятор (Змейка)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+
+        #app-container {
+            display: flex;
+            max-width: 1200px;
+            margin: 0 auto;
+            gap: 20px;
+        }
+
+        #map-container {
+            flex-basis: 60%;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        #control-panel {
+            flex-basis: 40%;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        #grid-map {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr); /* 5 колонок для клеток + 1 для Y-метки */
+            gap: 1px;
+            border: 2px solid #333;
+            width: fit-content;
+            margin-top: 10px;
+        }
+
+        .grid-cell {
+            width: 80px;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-size: 10px;
+            font-weight: bold;
+            color: #000;
+            position: relative;
+        }
+
+        .axis-label {
+            width: 80px;
+            height: 20px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .axis-label.y-label {
+            width: 20px;
+            height: 80px;
+            line-height: 80px;
+        }
+
+        .x-axis {
+            display: flex;
+            margin-left: 20px; /* Смещение для Y-метки */
+        }
+
+        /* Визуализация робота (кружок) */
+        .robot {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background-color: #0000FF; /* ROBOT_COLOR */
+            border-radius: 50%;
+            border: 2px solid #000;
+            z-index: 10;
+        }
+
+        /* Кнопки */
+        button {
+            padding: 10px 15px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+
+        #autoRunBtn { background-color: #4CAF50; color: white; }
+        #autoRunBtn:hover:not(:disabled) { background-color: #45a049; }
+        #stepBtn { background-color: #008CBA; color: white; }
+        #stepBtn:hover:not(:disabled) { background-color: #007bb5; }
+        #resetBtn { background-color: #f44336; color: white; }
+        #resetBtn:hover:not(:disabled) { background-color: #da190b; }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        #history-log {
+            flex-grow: 1;
+            padding: 10px;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            overflow-y: scroll;
+            height: 400px;
+            font-size: 12px;
+            white-space: pre-wrap;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+    </style>
+</head>
+<body>
+    <div id="app-container">
+        <div id="map-container">
+            <h1>Робот Биолог</h1>
+            <p><strong>Цель:</strong> Пройти все клетки и обработать "Растение" и "Пробирка".</p>
+
+            <div class="x-axis" id="x-axis-labels">
+                </div>
+
+            <div id="grid-map-wrapper">
+                <div id="grid-map">
+                    </div>
+            </div>
+        </div>
+
+        <div id="control-panel">
+            <div class="button-group">
+                <button id="autoRunBtn">Автозапуск</button>
+                <button id="stepBtn">Один шаг</button>
+                <button id="resetBtn">Сброс</button>
+            </div>
+
+            <h3>История Действий</h3>
+            <div id="history-log"></div>
+        </div>
+    </div>
+
+    <script>
+        const gridMap = document.getElementById('grid-map');
+        const historyLog = document.getElementById('history-log');
+        const autoRunBtn = document.getElementById('autoRunBtn');
+        const stepBtn = document.getElementById('stepBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const W = 5;
+        const H = 5;
+        let autoRunInterval = null;
+
+        
+
+        async function fetchState(endpoint, method = 'POST') {
+            const response = await fetch(endpoint, { method: method });
+            if (!response.ok) {
+                console.error('Ошибка сервера:', response.statusText);
+                return null;
+            }
+            return response.json();
+        }
+
+        async function handleStep() {
+            const state = await fetchState('/step');
+            if (state) {
+                updateUI(state);
+                if (state.is_complete || !state.step_success) {
+                    stopAutoRun();
+                }
+            }
+        }
+
+        async function handleReset() {
+            const state = await fetchState('/reset');
+            if (state) {
+                updateUI(state);
+                enableControls();
+                stopAutoRun();
+            }
+        }
+
+        
+
+        function startAutoRun() {
+            if (autoRunInterval) return;
+            disableControls(true);
+
+            
+            autoRunInterval = setInterval(() => {
+                handleStep();
+            }, 300); 
+        }
+
+        function stopAutoRun() {
+            if (autoRunInterval) {
+                clearInterval(autoRunInterval);
+                autoRunInterval = null;
+            }
+            enableControls();
+        }
+
+        function disableControls(isAutoRunning = false) {
+            autoRunBtn.disabled = true;
+            stepBtn.disabled = isAutoRunning;
+        }
+
+        function enableControls() {
+            autoRunBtn.disabled = false;
+            stepBtn.disabled = false;
+        }
+
+        
+
+        function renderMap(mapData, robot_x, robot_y, current_cell_type) {
+            gridMap.innerHTML = '';
+            gridMap.style.gridTemplateRows = `repeat(${H + 1}, auto)`;
+
+            
+            for (let y = H - 1; y >= 0; y--) { 
+                const row = mapData[y];
+
+                // Y-метка (самая левая колонка)
+                const yLabel = document.createElement('div');
+                yLabel.className = 'axis-label y-label';
+                yLabel.textContent = `Y=${y}`;
+                yLabel.style.gridRow = `${H - y + 1}`;
+                yLabel.style.gridColumn = '1';
+                gridMap.appendChild(yLabel);
+
+                for (let x = 0; x < W; x++) {
+                    const cellData = row[x];
+                    const cellEl = document.createElement('div');
+                    cellEl.className = 'grid-cell';
+
+                    
+                    cellEl.style.backgroundColor = cellData.color;
+                    cellEl.textContent = cellData.text;
+
+                    cellEl.style.gridRow = `${H - y + 1}`;
+                    cellEl.style.gridColumn = `${x + 2}`; 
+
+                    
+                    const isRobotHere = (cellData.x === robot_x && cellData.y === robot_y);
+
+                    if (isRobotHere) {
+                        
+                        const isStealth = (current_cell_type === 'LAB' || current_cell_type === 'CONTAINER');
+
+                        cellEl.style.border = isStealth ? '3px dashed red' : '3px solid black';
+
+                        if (!isStealth) {
+                            const robotEl = document.createElement('div');
+                            robotEl.className = 'robot';
+                            cellEl.appendChild(robotEl);
+                        }
+                    } else {
+                        cellEl.style.border = '1px solid #333';
+                    }
+
+                    gridMap.appendChild(cellEl);
+                }
+            }
+
+            
+            const xAxisLabels = document.getElementById('x-axis-labels');
+            xAxisLabels.innerHTML = '';
+            for (let x = 0; x < W; x++) {
+                const xLabel = document.createElement('div');
+                xLabel.className = 'axis-label';
+                xLabel.textContent = `X=${x}`;
+                xAxisLabels.appendChild(xLabel);
+            }
+        }
+
+        function updateHistory(history) {
+            historyLog.textContent = history.join('\n');
+            
+            historyLog.scrollTop = historyLog.scrollHeight;
+        }
+
+        function updateUI(state) {
+            renderMap(state.map, state.robot_x, state.robot_y, state.current_cell_type);
+            updateHistory(state.history);
+
+            if (state.is_complete) {
+                alert("🎉 МИССИЯ ВЫПОЛНЕНА! Робот завершил обход и обработал все клетки!");
+                disableControls(false);
+            }
+        }
+
+       
+        autoRunBtn.addEventListener('click', startAutoRun);
+        stepBtn.addEventListener('click', handleStep);
+        resetBtn.addEventListener('click', handleReset);
+
+        
+        document.addEventListener('DOMContentLoaded', handleReset);
+    </script>
+</body>
+</html>
